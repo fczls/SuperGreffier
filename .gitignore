@@ -1,0 +1,20 @@
+# ── Secrets — NE JAMAIS COMMITER ──
+.streamlit/secrets.toml
+*.key
+.env
+*.env
+
+# ── Données personnelles : notes d'audience brutes ──
+# (les vrais noms ne doivent jamais quitter le poste local)
+*.docx
+*.doc
+
+# ── Python ──
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ── Système / éditeur ──
+.DS_Store
+.obsidian/

@@ -1,0 +1,1 @@
+Lire le Readme.md pour comprendre l'état actuel du projet et l'organisation des différents éléments
