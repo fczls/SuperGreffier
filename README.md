@@ -22,7 +22,11 @@ Outil (app Streamlit + API Claude) qui transforme les **notes d'audience brutes*
 | `Charte rédaction harmonisée - Traitement récits.md` | Règles d'écriture MSDE (typo, majuscules, écriture inclusive) — source de vérité rédactionnelle |
 | `Politique_RGPD_Outil_IA_MSDE.md` | Politique de protection des données (v0.1, à valider par la direction) |
 | `Mise en page Texte - Boîte à Outils.md` | Guide manuel de mise en page Word (livret A4, calques) — **hors périmètre v1** de l'outil |
-| `app/app.py` | Code de l'application Streamlit (793 lignes) |
+| `app/app.py` | Code de l'application Streamlit (parcours guidé en 4 étapes) |
+| `app/anonymisation.py` | Anonymisation locale (prénoms/noms seuls, casse, mots entiers, une passe) + contrôle des noms résiduels |
+| `app/energie.py` | Estimation CO₂e d'un traitement (fourchette), équivalence en temps d'ordinateur allumé |
+| `app/tests/` | Tests unitaires (`python3 -m unittest discover -s tests`, depuis `app/`) |
+| `app/.streamlit/config.toml` | Thème visuel (palette MSDE « Relaxes pour le vivant ») |
 | `app/glossaire.json` | Bibliothèque d'acronymes partagée (persistante) |
 | `app/requirements.txt` | Dépendances : streamlit, anthropic, python-docx |
 | `app/LANCER.md` | Guide d'installation et de lancement pour bénévoles non-techniques |
@@ -32,11 +36,13 @@ Outil (app Streamlit + API Claude) qui transforme les **notes d'audience brutes*
 Pipeline principal, dans l'ordre :
 
 1. **Upload** d'un `.docx` de notes brutes → `extract_text()`
-2. **Anonymisation** locale via table de correspondance → `apply_anonymization()` (les vrais noms ne quittent jamais le poste)
+2. **Anonymisation** locale via table de correspondance → `apply_anonymization()` dans `anonymisation.py` (les vrais noms ne quittent jamais le poste ; l'envoi est bloqué si un nom réel subsiste : `find_residual_names()`)
 3. **Détection des acronymes inconnus** → `detect_unknown_acronyms()` (résolution interactive par l'utilisateur)
 4. **Appel API Claude** avec le prompt système + glossaire → `build_prompt()` / `call_claude()`
 5. **Résolution des passages incertains** → `extract_uncertain_passages()` / `render_raw_notes_component()`
 6. **Export `.docx` structuré** → `generate_docx()`
+
+Le bouton **⚡ Énergie** (en haut à droite) affiche l'estimation CO₂e du traitement et la compare au temps d'ordinateur allumé évité. Ordre de grandeur, pas une mesure : Anthropic ne publie pas de donnée par requête (méthode et sources dans `energie.py` et dans le panneau).
 
 Le **prompt système** (`PROMPT_SYSTEME`, en haut du fichier) encode la règle de fidélité et les règles typographiques MSDE. Le glossaire de base est dans `GLOSSAIRE_BASE`, fusionné avec `glossaire.json` (modifiable via l'UI, sidebar).
 
@@ -69,3 +75,28 @@ Transcription audio · mise en page livret finale (reste manuelle, cf. *Boîte �
 - **MSDE** : l'association porteuse (observation d'audiences liées aux mobilisations climatiques et sociales).
 - **Scribe** : bénévole qui prend les notes en audience.
 - **Récit d'audience** : le livret final publié, destiné aux avocats partenaires et au réseau militant.
+
+## Contribution / versions — organisation à trois espaces
+
+Le projet vit dans trois espaces complémentaires. Comprendre qui contient quoi évite les confusions.
+
+| Espace | Contenu | Rôle |
+|---|---|---|
+| **Obsidian** (`~/Documents/Obsidian/msde/SuperGreffier`) | Doc produit : PRD, charte, politique RGPD, guide de mise en page | Réflexion et documentation. C'est ici qu'on écrit et révise. |
+| **Local** (le même dossier, côté code) | La version de l'app en cours de travail/test | Développement. On code et on teste ici avant de publier. |
+| **GitHub** ([fczls/SuperGreffier](https://github.com/fczls/SuperGreffier)) | La version stable diffusée aux testeurs | Distribution. Les bénévoles récupèrent l'outil ici. |
+
+**Pourquoi l'app tourne en local et n'est pas hébergée en ligne :** l'anonymisation des noms se fait *à l'intérieur* de l'app. Héberger l'outil sur un serveur central ferait transiter les notes brutes (avec les vrais noms) par ce serveur — ce qui violerait la politique RGPD du MSDE. Chaque testeur exécute donc l'app sur sa propre machine.
+
+**Flux de travail git :**
+
+```bash
+# après avoir modifié le code en local et l'avoir testé
+git add .
+git commit -m "Description courte du changement"
+git push            # publie la nouvelle version stable sur GitHub
+```
+
+**Ce que git ne suit jamais** (protégé par `.gitignore`) : les clés API, les secrets, et les notes d'audience `.docx` (données personnelles). Ne jamais forcer l'ajout de ces fichiers.
+
+**Côté testeurs :** ils récupèrent l'outil via *Code → Download ZIP* sur la page GitHub, puis suivent `POUR_LES_TESTEURS.md`. Ils n'ont pas besoin de git.
