@@ -398,16 +398,18 @@ Décision / date de délibéré : délibéré au 10 septembre 2026
 
 CUSTOM_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Poppins:wght@400;500;600;700&display=swap');
+@font-face { font-family: 'Gelica'; font-weight: 400; src: url('/app/static/Gelica-Regular.otf') format('opentype'); }
+@font-face { font-family: 'Gelica'; font-style: italic; font-weight: 400; src: url('/app/static/Gelica-Italic.otf') format('opentype'); }
 
 /* ── Base ─────────────────────────────────────────── */
 html, body, .stApp, button, input, textarea, select,
 [class*="st-"]:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded):not([data-testid="stExpanderToggleIcon"]) {
-  font-family: 'Poppins', -apple-system, 'Segoe UI', sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
 }
 .stApp { background: #FBF8EF; }
 h1, h2, h3 {
-  font-family: 'Fraunces', Georgia, serif !important;
+  font-family: 'Gelica', Georgia, serif !important;
+  font-weight: 400 !important;
   color: #14201D !important;
   letter-spacing: -0.01em;
 }
@@ -415,7 +417,7 @@ h1, h2, h3 {
 #MainMenu, footer { visibility: hidden; }
 header[data-testid="stHeader"] { background: transparent; }
 
-/* Restaurer la police des icônes Material (écrasée par la règle Poppins) */
+/* Restaurer la police des icônes Material (écrasée par la règle de police du corps) */
 [data-testid="stIconMaterial"], [data-testid="stExpanderToggleIcon"],
 .material-symbols-rounded, .material-symbols-outlined, .material-icons {
   font-family: 'Material Symbols Rounded' !important;
@@ -440,7 +442,7 @@ input[placeholder="sk-ant-…"] {
   transform: rotate(-0.6deg); margin-bottom: 10px;
 }
 .sg-title {
-  font-family: 'Fraunces', Georgia, serif; font-size: 2.4rem; font-weight: 600;
+  font-family: 'Gelica', Georgia, serif; font-size: 2.4rem; font-weight: 400;
   color: #14201D; margin: 0 0 4px 0; line-height: 1.1;
 }
 .sg-sub { color: #5C6660; font-size: 0.95rem; margin: 0 0 6px 0; max-width: 640px; }
@@ -491,8 +493,8 @@ div[class*="st-key-stepbtn_"][class*="_active"] button {
 .sg-stat .ic.info { background: #E7E4FA; color: #4A42B8; }
 .sg-stat .ic.neutral { background: #F1EDE0; color: #5C6660; }
 .sg-stat .v {
-  font-family: 'Fraunces', Georgia, serif; font-size: 1.45rem;
-  font-weight: 600; color: #14201D; line-height: 1;
+  font-family: 'Gelica', Georgia, serif; font-size: 1.45rem;
+  font-weight: 400; color: #14201D; line-height: 1;
 }
 .sg-stat .l { font-size: 0.85rem; color: #5C6660; max-width: 170px; line-height: 1.35; }
 
@@ -568,7 +570,7 @@ button[kind="secondary"], [data-testid="stBaseButton-secondary"] {
   text-align: center; color: #F4F1E6; margin: 8px 0;
 }
 .sg-processing h3 {
-  color: #FFFFFF !important; font-family: 'Fraunces', Georgia, serif;
+  color: #FFFFFF !important; font-family: 'Gelica', Georgia, serif;
   margin: 20px 0 8px 0; font-size: 1.5rem;
 }
 .sg-processing p { color: #9DBBB0; font-size: 0.9rem; margin: 0; line-height: 1.6; }
@@ -590,7 +592,7 @@ button[kind="secondary"], [data-testid="stBaseButton-secondary"] {
 .sg-compare .lb { color: #5C6660; }
 .sg-compare .v { color: #14201D; font-weight: 500; text-align: right; }
 .sg-compare .gain { margin-top: 10px; padding-top: 12px; border-top: 1px dashed #C9C4B4; text-align: center; }
-.sg-compare .big { display: block; font-family: 'Fraunces', Georgia, serif; font-size: 2rem; font-weight: 600; color: #0E5B44; line-height: 1.1; }
+.sg-compare .big { display: block; font-family: 'Gelica', Georgia, serif; font-size: 2rem; font-weight: 400; color: #0E5B44; line-height: 1.1; }
 .sg-compare .txt { display: block; font-size: 0.82rem; color: #5C6660; margin-top: 4px; }
 .sg-small, .sg-small li { font-size: 0.74rem !important; color: #8A857A !important; line-height: 1.5; }
 .sg-small a { color: #8A857A !important; }

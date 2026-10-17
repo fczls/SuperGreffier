@@ -18,3 +18,6 @@ venv/
 # ── Système / éditeur ──
 .DS_Store
 .obsidian/
+
+# ── Police Gelica : seules les graisses utilisées (app/static/) sont publiées ──
+app/Gelica/
