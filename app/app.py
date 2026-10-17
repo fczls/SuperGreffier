@@ -449,8 +449,8 @@ input[placeholder="sk-ant-…"] {
 
 /* ── Stepper : fil d'ariane cliquable ─────────────── */
 div[class*="st-key-stepbtn_"] button {
-  border-radius: 999px !important; font-size: 0.85rem !important;
-  font-weight: 500 !important; padding: 4px 10px !important;
+  border-radius: 999px !important; font-size: 0.78rem !important; white-space: nowrap !important;
+  font-weight: 500 !important; padding: 4px 14px !important; min-height: 40px !important;
   border: 1px solid #E3DECB !important; background: #FFFFFF !important;
   color: #8A857A !important; box-shadow: none !important;
 }
@@ -467,6 +467,9 @@ div[class*="st-key-stepbtn_"][class*="_active"] button {
   background: #0C3A34 !important; color: #FFFFFF !important; border-color: #0C3A34 !important;
 }
 
+/* Stepper : 8 px entre les étapes */
+.st-key-stepper [data-testid="stHorizontalBlock"] { gap: 8px !important; }
+
 /* Bouton énergie (popover) : discret, aligné à droite */
 .st-key-energie_pop button {
   border: none !important; background: transparent !important;
@@ -476,6 +479,70 @@ div[class*="st-key-stepbtn_"][class*="_active"] button {
 .st-key-energie_pop button p { white-space: nowrap !important; }
 .st-key-energie_pop button:hover { color: #14201D !important; }
 [data-testid="stPopoverBody"] { min-width: 420px; }
+
+/* ── Étape 2 : barre fichier + carte acronymes ─────
+   Échelle calée sur la maquette (titre ≈ 38 px, intro ≈ 15 px) :
+   texte courant 13-14 px, titres de carte 24 px, contrôles ≈ 35 px de haut. */
+.st-key-filebar {
+  background: #EFEBDD; border: 1px solid #BFE3D0; border-radius: 12px; padding: 12px 18px;
+}
+.sg-file, .sg-gloss {
+  display: flex; align-items: center; gap: 10px;
+  color: #0E5B44; font-weight: 500; font-size: 0.85rem; white-space: nowrap;
+}
+.sg-gloss { justify-content: flex-end; font-size: 0.82rem; }
+.sg-file svg, .sg-gloss svg { width: 18px; height: 18px; flex-shrink: 0; }
+.st-key-filebar button[kind], .st-key-card_acro [data-testid="stPopoverButton"][kind] {
+  white-space: nowrap !important; min-height: 0 !important;
+  background: #E2DCC8 !important; border: none !important; border-radius: 4px !important;
+  color: #14201D !important; font-weight: 500 !important; padding: 5px 12px !important;
+  box-shadow: none !important;
+}
+.st-key-filebar button[kind] p, .st-key-card_acro [data-testid="stPopoverButton"][kind] p {
+  font-size: 0.8rem !important;
+}
+.st-key-filebar button[kind]:hover, .st-key-card_acro [data-testid="stPopoverButton"][kind]:hover {
+  background: #D8D1BA !important;
+}
+.st-key-card_acro { background: #FBF8EF; }
+.st-key-card_acro, .st-key-card_acro > div { border-color: #DDD8C8 !important; }
+.st-key-card_acro [data-testid="stCaptionContainer"],
+.st-key-card_acro [data-testid="stCaptionContainer"] * {
+  font-size: 0.88rem !important; color: #2E3A36 !important; opacity: 1 !important;
+}
+.st-key-card_acro [data-testid="stCaptionContainer"] { margin-bottom: 14px; }
+.st-key-card_acro [data-testid="stWidgetLabel"] p { color: #5C6660; font-size: 0.8rem; }
+.st-key-card_acro [data-baseweb="input"], .st-key-card_acro [data-baseweb="base-input"] {
+  background: #FFFFFF !important; border: none !important; border-radius: 8px !important;
+}
+.st-key-card_acro input { padding: 9px 13px !important; font-size: 0.85rem; }
+.st-key-btn_add_acro button[kind] {
+  background: #14201D !important; color: #FFFFFF !important; border: none !important;
+  border-radius: 4px !important; padding: 8px 22px !important; min-height: 0 !important;
+  white-space: nowrap !important; box-shadow: none !important;
+}
+.st-key-btn_add_acro button[kind] p { color: #FFFFFF !important; font-size: 0.92rem !important; font-weight: 500; }
+.st-key-btn_add_acro button[kind]:hover { background: #0C3A34 !important; }
+
+/* Pas de lien d'ancre à côté des titres */
+[data-testid="stHeaderActionElements"] { display: none !important; }
+
+/* Centrage vertical des éléments d'une même ligne (puce, glossaire, bouton) */
+.st-key-card_acro .sg-chip { margin: 0; }
+.st-key-card_acro [data-testid="stColumn"] [data-testid="stMarkdownContainer"],
+.st-key-filebar [data-testid="stMarkdownContainer"] { margin: 0 !important; }
+.st-key-filebar [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
+/* Puce « tout est reconnu » : mêmes teintes sable que la barre fichier */
+.sg-row .sg-chip.ok { background: #EFEBDD; border-color: #BFE3D0; color: #0E5B44; }
+/* Texte des pastilles du stepper : le <p> interne impose 16 px, on le cale ici */
+div[class*="st-key-stepbtn_"] button { display: flex; align-items: center; justify-content: center; }
+div[class*="st-key-stepbtn_"] button p {
+  font-size: 0.78rem !important; line-height: 1.2 !important; margin: 0 !important;
+}
+.sg-file, .sg-gloss, .sg-row { margin: 0; min-height: 36px; display: flex; align-items: center; }
+
+/* Titres de carte : même échelle sur toutes les étapes */
+[data-testid="stMain"] h3 { font-size: 1.5rem !important; }
 
 /* ── Stats (étape 4) : icône / valeur / libellé ───── */
 .sg-stats { display: flex; gap: 40px; margin: 14px 0 6px 0; flex-wrap: wrap; }
@@ -606,12 +673,25 @@ button[kind="secondary"], [data-testid="stBaseButton-secondary"] {
 </style>
 """
 
+ICON_DOC = (
+    '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#14201D" stroke-width="1.8" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l5 5v6M6 3v10"/><path d="M15 3v5h5"/>'
+    '<text x="2" y="23" font-size="8" font-weight="700" fill="#14201D" stroke="none" '
+    'font-family="Arial">DOC</text></svg>'
+)
+ICON_BOOK = (
+    '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#14201D" stroke-width="1.8" '
+    'stroke-linejoin="round" aria-hidden="true"><path d="M2 5h8a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z"/>'
+    '<path d="M24 5h-8a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h9z"/></svg>'
+)
+
 STEPS = ["Charger", "Préparer", "Lancer", "Relire & exporter"]
 
 
 def render_stepper(current, nav_enabled=True):
     """Fil d'ariane cliquable : les étapes passées permettent de revenir en arrière."""
-    cols = st.columns([1.15, 1.15, 1.05, 1.75, 1.0, 1.15])
+    with st.container(key="stepper"):
+        cols = st.columns([1.15, 1.15, 1.05, 1.75, 1.0, 1.15])
     for i, name in enumerate(STEPS, 1):
         state = "done" if i < current else ("active" if i == current else "todo")
         label = ("✓ " if state == "done" else f"{i} · ") + name
@@ -784,34 +864,39 @@ elif step == 2:
 
     # ── Fichier chargé : rappel + actions sur une seule ligne ─────
     n_lines = len(st.session_state.raw_text.split("\n"))
-    f_col, a_col, r_col = st.columns([3.4, 1.0, 1.6])
-    with f_col:
-        st.markdown(
-            chip(f"✓ {st.session_state.uploaded_filename} · {n_lines} lignes", "ok"),
-            unsafe_allow_html=True,
-        )
-    with a_col:
-        with st.popover("Aperçu", use_container_width=True):
-            preview = st.session_state.raw_text
-            st.text(preview[:3000] + ("…" if len(preview) > 3000 else ""))
-    with r_col:
-        if st.button("Remplacer le fichier", use_container_width=True):
-            st.session_state.raw_text = ""
-            st.session_state.uploaded_filename = ""
-            st.session_state.result_text = ""
-            goto(1)
+    with st.container(key="filebar"):
+        f_col, a_col, r_col = st.columns([4.6, 0.95, 1.55], vertical_alignment="center")
+        with f_col:
+            st.markdown(
+                f'<div class="sg-file">{ICON_DOC}<span>'
+                f'{html_lib.escape(st.session_state.uploaded_filename)} · {n_lines} lignes'
+                '</span></div>',
+                unsafe_allow_html=True,
+            )
+        with a_col:
+            with st.popover("Aperçu", use_container_width=True):
+                preview = st.session_state.raw_text
+                st.text(preview[:3000] + ("…" if len(preview) > 3000 else ""))
+        with r_col:
+            if st.button("Remplacer le fichier", use_container_width=True):
+                st.session_state.raw_text = ""
+                st.session_state.uploaded_filename = ""
+                st.session_state.result_text = ""
+                goto(1)
 
     # ── Acronymes ─────────────────────────────────────────────────
-    with st.container(border=True):
+    with st.container(border=True, key="card_acro"):
         st.markdown("### Acronymes")
         unknown = detect_unknown_acronyms(
             st.session_state.raw_text, st.session_state.glossaire
         )
         if not unknown:
-            g_col1, g_col2 = st.columns([3.4, 2.6])
+            g_col1, g_col2 = st.columns([3.4, 2.6], vertical_alignment="center")
             with g_col1:
                 st.markdown(
-                    chip("✓ Tous les acronymes détectés sont dans le glossaire", "ok"),
+                    '<div class="sg-row">'
+                    + chip("✓ Tous les acronymes détectés sont dans le glossaire", "ok")
+                    + "</div>",
                     unsafe_allow_html=True,
                 )
         else:
@@ -825,9 +910,9 @@ elif step == 2:
                     acro, key=f"acro_{acro}", placeholder="Signification"
                 )
 
-            g_col1, g_col2 = st.columns([1.6, 4.4])
+            g_col1, g_col2 = st.columns([2.1, 3.9], vertical_alignment="center")
             with g_col1:
-                if st.button("Ajouter au glossaire", use_container_width=True):
+                if st.button("Ajouter au glossaire", key="btn_add_acro", use_container_width=True):
                     clicked_entries = {}
                     for acro in unknown:
                         val = (st.session_state.get(f"acro_{acro}") or "").strip()
@@ -844,9 +929,14 @@ elif step == 2:
                         st.warning("Renseigne au moins une signification avant d'ajouter.")
 
         with g_col2:
-            with st.popover(
-                f"Glossaire complet · {len(st.session_state.glossaire)} entrées"
-            ):
+            t_col, v_col = st.columns([3.4, 0.9], vertical_alignment="center")
+            with t_col:
+                st.markdown(
+                    f'<div class="sg-gloss">{ICON_BOOK}<span>Glossaire complet · '
+                    f'{len(st.session_state.glossaire)} entrées</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with v_col, st.popover("Voir", use_container_width=True):
                 raw_glossaire = "\n".join(
                     f"{k} : {v}" for k, v in sorted(st.session_state.glossaire.items())
                 )
