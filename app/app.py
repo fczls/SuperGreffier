@@ -470,14 +470,15 @@ div[class*="st-key-stepbtn_"][class*="_active"] button {
 /* Stepper : 8 px entre les étapes */
 .st-key-stepper [data-testid="stHorizontalBlock"] { gap: 8px !important; }
 
-/* Bouton énergie (popover) : discret, aligné à droite */
-.st-key-energie_pop button {
-  border: none !important; background: transparent !important;
-  color: #5C6660 !important; box-shadow: none !important;
-  font-size: 0.85rem !important; float: right;
+/* Bouton énergie (popover) : sable, sans bordure, aligné à droite */
+.st-key-energie_pop button[kind] {
+  background: #EFEBDD !important; border: none !important; border-radius: 6px !important;
+  color: #14201D !important; box-shadow: none !important;
+  min-height: 40px !important; padding: 6px 18px !important; float: right;
+  white-space: nowrap !important;
 }
-.st-key-energie_pop button p { white-space: nowrap !important; }
-.st-key-energie_pop button:hover { color: #14201D !important; }
+.st-key-energie_pop button[kind] p { white-space: nowrap !important; font-size: 0.95rem !important; font-weight: 500 !important; }
+.st-key-energie_pop button[kind]:hover { background: #E4DFCB !important; }
 [data-testid="stPopoverBody"] { min-width: 420px; }
 
 /* ── Étape 2 : barre fichier + carte acronymes ─────
@@ -708,7 +709,7 @@ def render_stepper(current, nav_enabled=True):
                 goto(i)
     with cols[5]:
         with st.container(key="energie_pop"):
-            with st.popover("⚡ Énergie"):
+            with st.popover("🔌 Énergie"):
                 render_energy_panel()
 
 
