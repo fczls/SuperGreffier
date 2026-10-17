@@ -7,12 +7,20 @@ import streamlit as st
 import json
 import re
 import io
+import time
 import html as html_lib
 from pathlib import Path
 
 from docx import Document
 from docx.shared import Pt, RGBColor
 import anthropic
+
+from energie import (
+    estimate_energy, format_range, pc_minutes, format_duration,
+    minutes_evitees, format_hm,
+    SOURCES, DEMO_G_CO2, G_CO2_PC_PAR_HEURE,
+)
+from anonymisation import apply_anonymization, find_residual_names
 
 # ─────────────────────────────────────────────────────────────────
 # Configuration
@@ -193,27 +201,6 @@ def detect_unknown_acronyms(text, glossaire):
     found = set(re.findall(r'\b[A-Z]{2,6}°?\b', text))
     return sorted(a for a in found if a not in glossaire and a not in EXCLUSIONS)
 
-def apply_anonymization(text, anon_table):
-    # Construire une table étendue : ajouter les remplacements nom-seul
-    # ex: "Malo Royen → Thomas Bertrand" génère aussi "Royen → Bertrand"
-    extended = dict(anon_table)
-    for real, pseudo in anon_table.items():
-        real_parts = real.strip().split()
-        pseudo_parts = pseudo.strip().split()
-        if len(real_parts) >= 2 and len(pseudo_parts) >= 2:
-            last_real = real_parts[-1]
-            last_pseudo = pseudo_parts[-1]
-            # N'ajouter que si le nom seul n'est pas déjà dans la table
-            if last_real not in extended:
-                extended[last_real] = last_pseudo
-
-    # Remplacer du plus long au plus court pour éviter les collisions
-    for real in sorted(extended.keys(), key=len, reverse=True):
-        pseudo = extended[real]
-        if real.strip() and pseudo.strip():
-            text = text.replace(real, pseudo)
-    return text
-
 def extract_uncertain_passages(text):
     """
     Extrait les passages incertains avec leur contexte (paragraphes voisins).
@@ -234,91 +221,20 @@ def extract_uncertain_passages(text):
     return passages
 
 
-def apply_uncertain_corrections(text, session_state, n_passages):
+def apply_uncertain_corrections(text, corrections_map, n_passages):
     """
     Remplace les occurrences de [passage incertain — à vérifier] par les
-    corrections saisies (lues depuis session_state via les clés correction_0…N).
+    corrections saisies (mapping correction_0…N → texte).
     Les passages sans correction conservent le marqueur.
     """
     marker = "[passage incertain — à vérifier]"
     parts = text.split(marker)
     result = parts[0]
     for i in range(len(parts) - 1):
-        correction = session_state.get(f"correction_{i}", "").strip()
+        correction = (corrections_map.get(f"correction_{i}") or "").strip()
         result += correction if correction else marker
         result += parts[i + 1]
     return result
-
-
-def render_raw_notes_component(raw_text, passage_line_idx, total_processed_lines, window=15):
-    """
-    Notes brutes avec barre de recherche compacte intégrée (pill sombre).
-    Barre : 🔍 [input]  N/M  ↑  ↓  ✕  — tout sur une ligne.
-    """
-    raw_lines = raw_text.split("\n")
-    total_raw = max(1, len(raw_lines))
-    ratio = passage_line_idx / max(1, total_processed_lines)
-    center = int(ratio * total_raw)
-    start = max(0, center - window)
-    end = min(total_raw, center + window)
-
-    raw_json = json.dumps(raw_text)
-    default_win_json = json.dumps("\n".join(raw_lines[start:end]))
-    header_json = json.dumps(f"lignes {start + 1}–{end} sur {total_raw}")
-
-    return f"""
-<style>
-  #sbar {{display:flex;align-items:center;background:#1e1e2e;border-radius:20px;padding:3px 10px;flex-shrink:0}}
-  #sinp {{flex:1;background:transparent;border:none;outline:none;color:#e0e0e0;font-size:0.85em;font-family:monospace;padding:2px 4px}}
-  #sinp::placeholder {{color:#555}}
-  .nb {{background:none;border:none;color:#888;cursor:pointer;font-size:1.1em;padding:0 3px;line-height:1}}
-  .nb:hover {{color:#e0e0e0}}
-  #ctr {{color:#aaa;font-size:0.8em;margin:0 6px;min-width:28px;text-align:right}}
-</style>
-<div style="font-family:monospace;height:320px;display:flex;flex-direction:column;gap:5px">
-  <div id="sbar">
-    <span style="color:#555;font-size:0.9em;margin-right:5px">🔍</span>
-    <input id="sinp" type="text" placeholder="Rechercher dans les notes…" oninput="onS(this.value)" />
-    <span id="ctr"></span>
-    <button class="nb" onclick="mv(-1)" title="Précédent">↑</button>
-    <button class="nb" onclick="mv(1)" title="Suivant">↓</button>
-    <button class="nb" onclick="clr()" title="Effacer" style="padding-left:6px">✕</button>
-  </div>
-  <pre id="box" style="flex:1;overflow-y:auto;background:#f8f9fa;padding:10px;border-radius:4px;border:1px solid #ddd;white-space:pre-wrap;font-size:0.82em;margin:0;color:#1a1a1a"></pre>
-</div>
-<script>
-  var FR={raw_json}, DW={default_win_json}, DH={header_json};
-  var occs=[], cur=0;
-  var box=document.getElementById('box'), ctr=document.getElementById('ctr');
-  function esc(s){{return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}}
-  box.innerHTML='<span style="color:#888;font-size:0.8em">— '+DH+' —</span>\\n'+esc(DW);
-  function updC(){{ctr.textContent=occs.length?(cur+1)+'/'+occs.length:''}}
-  function mv(d){{
-    if(!occs.length)return;
-    occs[cur].style.outline='';
-    cur=(cur+d+occs.length)%occs.length;
-    occs[cur].style.outline='2px solid #e07000';
-    occs[cur].scrollIntoView({{block:'center'}});
-    updC();
-  }}
-  function onS(q){{
-    if(!q.trim()){{box.innerHTML='<span style="color:#888;font-size:0.8em">— '+DH+' —</span>\\n'+esc(DW);occs=[];cur=0;ctr.textContent='';return;}}
-    var lq=q.toLowerCase(),t=FR,lt=t.toLowerCase(),i=0,h='';
-    while(i<t.length){{
-      var p=lt.indexOf(lq,i);
-      if(p===-1){{h+=esc(t.slice(i));break;}}
-      h+=esc(t.slice(i,p))+'<mark class="occ" style="background:#FFE066;color:#1a1a1a">'+esc(t.slice(p,p+q.length))+'</mark>';
-      i=p+q.length;
-    }}
-    box.innerHTML=h;
-    occs=Array.from(box.querySelectorAll('.occ'));
-    cur=0;
-    if(occs.length){{occs[0].style.outline='2px solid #e07000';occs[0].scrollIntoView({{block:'center'}});}}
-    updC();
-  }}
-  function clr(){{document.getElementById('sinp').value='';onS('');}}
-</script>
-"""
 
 
 def build_prompt(glossaire):
@@ -326,6 +242,7 @@ def build_prompt(glossaire):
     return PROMPT_SYSTEME.format(glossaire="\n".join(lines))
 
 def call_claude(text, system_prompt, api_key):
+    """Retourne (texte, (tokens_entrée, tokens_sortie))."""
     client = anthropic.Anthropic(api_key=api_key)
     with client.messages.stream(
         model="claude-sonnet-4-6",
@@ -333,7 +250,9 @@ def call_claude(text, system_prompt, api_key):
         system=system_prompt,
         messages=[{"role": "user", "content": text}],
     ) as stream:
-        return stream.get_final_text()
+        message = stream.get_final_message()
+    result = "".join(b.text for b in message.content if b.type == "text")
+    return result, (message.usage.input_tokens, message.usage.output_tokens)
 
 def add_inline_markdown(paragraph, text):
     """
@@ -414,13 +333,381 @@ def parse_anon_table(raw):
                 break
     return table
 
+
+def build_demo_result(raw_text):
+    """
+    Récit fictif pour le mode démo : permet de parcourir tout le flux
+    (passages incertains, notes suggérées, export) sans appel API.
+    """
+    lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+    extrait = " ".join(lines[:2])[:200] if lines else "(notes vides)"
+    return f"""---
+**RÉSUMÉ D'AUDIENCE**
+Tribunal : tribunal judiciaire de Lyon
+Date : 8 juin 2026
+Affaire : blocage de l'autoroute A6 — entrave à la circulation
+Composition (présidente, procureur, avocates de la défense, greffière) : madame la présidente, madame la procureure, avocates A.B. et C.D., greffière
+Prévenu·es : Thomas Bertrand, Sophie Duval
+Faits reprochés : entrave à la circulation lors d'une action militante
+Décision / date de délibéré : délibéré au 10 septembre 2026
+---
+
+# Avant l'audience
+*La salle est presque pleine, une dizaine de personnes soutiennent les prévenu·es. Début des notes : {extrait}*
+
+# L'audience
+
+## Ouverture et vérification des identités
+
+**La présidente :** Bonjour messieurs dames. Nous allons vérifier les identités.
+
+**Thomas Bertrand :** Je suis ingénieur informaticien, j'ai toujours été écolo.
+
+## Déclarations des prévenu·es
+
+### Thomas Bertrand
+
+**Thomas Bertrand :** Il m'a fallu beaucoup de temps pour me rendre compte qu'il y avait des moyens pour agir et j'ai alors [passage incertain — à vérifier] engagé dans Dernière Rénovation (DR).
+
+*Il évoque ensuite la fresque du climat, ateliers [passage incertain — à vérifier] où on informe le grand public sur les causes du réchauffement climatique (RC).*
+
+### Sophie Duval
+
+**Sophie Duval :** Nous avions une banderole et une collègue a été interviewée par une journaliste pour évoquer l'action.
+
+## Questions du tribunal et du parquet
+
+**La présidente :** Pas d'autres questions ?
+
+## Réquisitions du parquet
+
+**La procureure :** Je requiers deux cents euros d'amende. Le rapport du GIEC [note suggérée] ne justifie pas l'entrave.
+
+## Plaidoiries de la défense
+
+**L'avocate de la défense A.B. :** Madame la présidente, j'invoque l'état de nécessité (EN) au titre de l'article [passage incertain — à vérifier] du code pénal.
+
+# La décision
+
+*Le tribunal renvoie la décision au délibéré. Ils et elles se donnent rendez-vous le 10 septembre.*
+"""
+
+# ─────────────────────────────────────────────────────────────────
+# UI — thème visuel (inspiration « Relaxes pour le vivant » / MSDE)
+# ─────────────────────────────────────────────────────────────────
+
+CUSTOM_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Poppins:wght@400;500;600;700&display=swap');
+
+/* ── Base ─────────────────────────────────────────── */
+html, body, .stApp, button, input, textarea, select,
+[class*="st-"]:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded):not([data-testid="stExpanderToggleIcon"]) {
+  font-family: 'Poppins', -apple-system, 'Segoe UI', sans-serif;
+}
+.stApp { background: #FBF8EF; }
+h1, h2, h3 {
+  font-family: 'Fraunces', Georgia, serif !important;
+  color: #14201D !important;
+  letter-spacing: -0.01em;
+}
+.block-container { padding-top: 2.4rem; max-width: 1080px; }
+#MainMenu, footer { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+
+/* Restaurer la police des icônes Material (écrasée par la règle Poppins) */
+[data-testid="stIconMaterial"], [data-testid="stExpanderToggleIcon"],
+.material-symbols-rounded, .material-symbols-outlined, .material-icons {
+  font-family: 'Material Symbols Rounded' !important;
+  font-weight: normal !important;
+}
+
+/* Masquer les mentions « Press Enter to apply » (déroutantes pour les novices) */
+[data-testid="InputInstructions"] { display: none !important; }
+
+/* Clé API : champ texte simple (pas de type password → pas de gestionnaire
+   de mots de passe), masqué visuellement par CSS */
+.st-key-api_key_widget input,
+input[placeholder="sk-ant-…"] {
+  -webkit-text-security: disc;
+}
+
+/* ── En-tête ──────────────────────────────────────── */
+.sg-kicker {
+  display: inline-block; background: #14201D; color: #FFFFFF;
+  padding: 3px 12px; font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  transform: rotate(-0.6deg); margin-bottom: 10px;
+}
+.sg-title {
+  font-family: 'Fraunces', Georgia, serif; font-size: 2.4rem; font-weight: 600;
+  color: #14201D; margin: 0 0 4px 0; line-height: 1.1;
+}
+.sg-sub { color: #5C6660; font-size: 0.95rem; margin: 0 0 6px 0; max-width: 640px; }
+
+/* ── Stepper : fil d'ariane cliquable ─────────────── */
+div[class*="st-key-stepbtn_"] button {
+  border-radius: 999px !important; font-size: 0.85rem !important;
+  font-weight: 500 !important; padding: 4px 10px !important;
+  border: 1px solid #E3DECB !important; background: #FFFFFF !important;
+  color: #8A857A !important; box-shadow: none !important;
+}
+div[class*="st-key-stepbtn_"] button:disabled { opacity: 1 !important; cursor: default !important; }
+div[class*="st-key-stepbtn_"][class*="_todo"] button { opacity: 0.55 !important; }
+div[class*="st-key-stepbtn_"][class*="_done"] button {
+  background: #DFF2E7 !important; color: #0E5B44 !important; border-color: #BFE3D0 !important;
+  cursor: pointer !important;
+}
+div[class*="st-key-stepbtn_"][class*="_done"] button:hover:enabled {
+  background: #CDEBD9 !important; transform: none;
+}
+div[class*="st-key-stepbtn_"][class*="_active"] button {
+  background: #0C3A34 !important; color: #FFFFFF !important; border-color: #0C3A34 !important;
+}
+
+/* Bouton énergie (popover) : discret, aligné à droite */
+.st-key-energie_pop button {
+  border: none !important; background: transparent !important;
+  color: #5C6660 !important; box-shadow: none !important;
+  font-size: 0.85rem !important; float: right;
+}
+.st-key-energie_pop button p { white-space: nowrap !important; }
+.st-key-energie_pop button:hover { color: #14201D !important; }
+[data-testid="stPopoverBody"] { min-width: 420px; }
+
+/* ── Stats (étape 4) : icône / valeur / libellé ───── */
+.sg-stats { display: flex; gap: 40px; margin: 14px 0 6px 0; flex-wrap: wrap; }
+.sg-stat {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; gap: 7px; min-width: 110px;
+}
+.sg-stat .ic {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; font-weight: 700;
+}
+.sg-stat .ic.ok   { background: #DFF2E7; color: #0E5B44; }
+.sg-stat .ic.warn { background: #FDE4D5; color: #9A4B00; }
+.sg-stat .ic.info { background: #E7E4FA; color: #4A42B8; }
+.sg-stat .ic.neutral { background: #F1EDE0; color: #5C6660; }
+.sg-stat .v {
+  font-family: 'Fraunces', Georgia, serif; font-size: 1.45rem;
+  font-weight: 600; color: #14201D; line-height: 1;
+}
+.sg-stat .l { font-size: 0.85rem; color: #5C6660; max-width: 170px; line-height: 1.35; }
+
+/* ── Chips ────────────────────────────────────────── */
+.sg-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 14px; border-radius: 999px;
+  font-size: 0.82rem; font-weight: 500; margin: 2px 6px 2px 0;
+}
+.sg-chip.ok   { background: #DFF2E7; color: #0E5B44; border: 1px solid #BFE3D0; }
+.sg-chip.warn { background: #FDE4D5; color: #9A4B00; border: 1px solid #F5CBAA; }
+.sg-chip.info { background: #E7E4FA; color: #4A42B8; border: 1px solid #D2CDF2; }
+.sg-chip.neutral { background: #F1EDE0; color: #5C6660; border: 1px solid #E3DECB; }
+
+/* ── Récapitulatif (étape 3) ──────────────────────── */
+.sg-recap { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.sg-recap .row { display: flex; align-items: baseline; gap: 12px; }
+.sg-recap .ic {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; font-weight: 700; transform: translateY(4px);
+}
+.sg-recap .ic.ok { background: #0E5B44; color: #FFFFFF; }
+.sg-recap .ic.ko { background: #FDE4D5; color: #9A4B00; }
+.sg-recap .lb { font-weight: 600; color: #14201D; min-width: 140px; }
+.sg-recap .dt { color: #5C6660; font-size: 0.9rem; }
+
+/* ── Boutons « sticker » ──────────────────────────── */
+button[kind="primary"], [data-testid="stBaseButton-primary"] {
+  background: #FFC933 !important; color: #14201D !important;
+  border: 1.5px solid #14201D !important; border-radius: 6px !important;
+  font-weight: 600 !important; box-shadow: 3px 3px 0 #14201D !important;
+  transition: all .12s ease;
+}
+button[kind="primary"]:hover:enabled, [data-testid="stBaseButton-primary"]:hover:enabled {
+  background: #FFD75E !important; transform: translate(-1px,-1px);
+  box-shadow: 4px 4px 0 #14201D !important;
+}
+button[kind="primary"]:disabled, [data-testid="stBaseButton-primary"]:disabled {
+  background: #F1EDE0 !important; color: #A8A395 !important;
+  border-color: #C9C4B4 !important; box-shadow: none !important;
+}
+button[kind="secondary"], [data-testid="stBaseButton-secondary"] {
+  background: #FFFFFF !important; color: #14201D !important;
+  border: 1px solid #14201D !important; border-radius: 6px !important;
+  font-weight: 500 !important;
+}
+[data-testid="stDownloadButton"] button {
+  background: #FFC933 !important; color: #14201D !important;
+  border: 1.5px solid #14201D !important; border-radius: 6px !important;
+  font-weight: 600 !important; box-shadow: 3px 3px 0 #14201D !important;
+}
+
+/* ── Conteneurs / cartes ──────────────────────────── */
+[data-testid="stMain"] div[data-testid="stVerticalBlockBorderWrapper"] {
+  background: #FFFFFF; border: 1px solid #E7E2D0; border-radius: 12px;
+}
+[data-testid="stMain"] [data-testid="stExpander"] {
+  background: #FFFFFF; border: 1px solid #E7E2D0; border-radius: 10px;
+}
+[data-testid="stMain"] [data-testid="stExpander"] details { border: none; }
+[data-testid="stMetric"] {
+  background: #FFFFFF; border: 1px solid #E7E2D0; border-radius: 10px;
+  padding: 12px 16px;
+}
+[data-testid="stFileUploaderDropzone"] {
+  background: #FFFFFF; border: 1.5px dashed #0C3A34; border-radius: 10px;
+}
+
+/* ── Écran de traitement ──────────────────────────── */
+.sg-processing {
+  background: #0C3A34; border-radius: 12px; padding: 56px 32px;
+  text-align: center; color: #F4F1E6; margin: 8px 0;
+}
+.sg-processing h3 {
+  color: #FFFFFF !important; font-family: 'Fraunces', Georgia, serif;
+  margin: 20px 0 8px 0; font-size: 1.5rem;
+}
+.sg-processing p { color: #9DBBB0; font-size: 0.9rem; margin: 0; line-height: 1.6; }
+.sg-dots { display: flex; gap: 10px; justify-content: center; }
+.sg-dots span {
+  width: 14px; height: 14px; border-radius: 50%; background: #FFC933;
+  animation: sg-bounce 1.2s infinite ease-in-out;
+}
+.sg-dots span:nth-child(2) { animation-delay: 0.15s; background: #DFF2E7; }
+.sg-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes sg-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Comparaison énergie (popover) ───────────────── */
+.sg-compare { background: #FBF8EF; border: 1px solid #E7E2D0; border-radius: 10px; padding: 14px 16px; }
+.sg-compare .row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 0.88rem; }
+.sg-compare .lb { color: #5C6660; }
+.sg-compare .v { color: #14201D; font-weight: 500; text-align: right; }
+.sg-compare .gain { margin-top: 10px; padding-top: 12px; border-top: 1px dashed #C9C4B4; text-align: center; }
+.sg-compare .big { display: block; font-family: 'Fraunces', Georgia, serif; font-size: 2rem; font-weight: 600; color: #0E5B44; line-height: 1.1; }
+.sg-compare .txt { display: block; font-size: 0.82rem; color: #5C6660; margin-top: 4px; }
+.sg-small, .sg-small li { font-size: 0.74rem !important; color: #8A857A !important; line-height: 1.5; }
+.sg-small a { color: #8A857A !important; }
+
+/* ── Divers ───────────────────────────────────────── */
+[data-testid="stMain"] textarea { background: #FDFCF7; border-radius: 8px; }
+.sg-passage-nav {
+  text-align: right; font-weight: 600; padding-top: 14px;
+  color: #5C6660; font-size: 0.9rem;
+}
+</style>
+"""
+
+STEPS = ["Charger", "Préparer", "Lancer", "Relire & exporter"]
+
+
+def render_stepper(current, nav_enabled=True):
+    """Fil d'ariane cliquable : les étapes passées permettent de revenir en arrière."""
+    cols = st.columns([1.15, 1.15, 1.05, 1.75, 1.0, 1.15])
+    for i, name in enumerate(STEPS, 1):
+        state = "done" if i < current else ("active" if i == current else "todo")
+        label = ("✓ " if state == "done" else f"{i} · ") + name
+        # L'étape 1 se rejoue via « Remplacer le fichier », pas via le fil d'ariane
+        clickable = nav_enabled and state == "done" and i != 1
+        with cols[i - 1]:
+            if st.button(
+                label,
+                key=f"stepbtn_{i}_{state}",
+                disabled=not clickable,
+                use_container_width=True,
+                help="Revenir à cette étape" if clickable else None,
+            ):
+                goto(i)
+    with cols[5]:
+        with st.container(key="energie_pop"):
+            with st.popover("⚡ Énergie"):
+                render_energy_panel()
+
+
+def render_energy_panel():
+    """Estimation CO₂e du dernier traitement + méthode de calcul."""
+    usage = st.session_state.usage_tokens
+    demo = st.session_state.demo_run and st.session_state.result_text
+    g_range = None
+    if demo:
+        g_range = DEMO_G_CO2
+    elif usage:
+        g_range = estimate_energy(*usage)["g_co2"]
+
+    if g_range:
+        st.markdown(chip(format_range(*g_range, "g CO₂e"), "neutral"), unsafe_allow_html=True)
+        if demo:
+            st.caption("Valeurs de démonstration — aucun appel API n'a été fait.")
+        else:
+            st.caption(
+                f"{usage[0]:,} tokens envoyés · {usage[1]:,} tokens générés".replace(",", " ")
+            )
+        m_bas, m_haut = pc_minutes(*g_range)
+        st.number_input(
+            "Temps de mise au propre sans l'outil (heures)",
+            min_value=0.5, max_value=40.0, step=0.5, value=4.0, key="manual_hours",
+        )
+        h = st.session_state.manual_hours
+        evitees = minutes_evitees(h, g_range[1])
+        st.markdown(
+            '<div class="sg-compare">'
+            f'<div class="row"><span class="lb">Sans l\'outil</span>'
+            f'<span class="v">{format_hm(h * 60)} d\'ordinateur allumé</span></div>'
+            f'<div class="row"><span class="lb">Avec l\'outil</span>'
+            f'<span class="v">au plus {format_duration(m_haut)} d\'équivalent '
+            f'({format_range(*g_range, "g CO₂e")})</span></div>'
+            f'<div class="gain"><span class="big">≥ {format_hm(evitees)}</span>'
+            f'<span class="txt">d\'ordinateur allumé évitées en équivalent énergétique, '
+            f'dans le pire cas</span></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<p class="sg-small">Base : un ordinateur allumé émet '
+            f'{G_CO2_PC_PAR_HEURE["bas"]} à {G_CO2_PC_PAR_HEURE["haut"]} g CO₂e par heure. '
+            "Le temps de relecture n'est pas compté.</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("L'estimation s'affiche après un traitement (API ou mode démo).")
+
+    with st.expander("Méthode et sources"):
+        st.markdown(
+            '<p class="sg-small">Ordre de grandeur, pas une mesure : Anthropic ne publie '
+            "aucune donnée d'énergie par requête. La fourchette part de chiffres publiés pour "
+            "d'autres modèles (≈ 0,5 à 6 mWh par token généré, un token envoyé pesant dix fois "
+            "moins) et d'une intensité du réseau électrique entre 55 et 400 g CO₂e/kWh selon le "
+            "lieu du datacenter (inconnu). Fabrication du matériel et eau non comprises. "
+            "La consommation d'un ordinateur allumé vient d'Ekwateur, qui ne cite pas sa "
+            "source.</p>"
+            '<ul class="sg-small">'
+            + "".join(f'<li><a href="{u}" target="_blank">{t}</a></li>' for t, u in SOURCES)
+            + "</ul>",
+            unsafe_allow_html=True,
+        )
+
+
+def chip(label, kind="ok"):
+    return f'<span class="sg-chip {kind}">{label}</span>'
+
+
+def goto(step):
+    st.session_state.step = step
+    st.rerun()
+
+
 # ─────────────────────────────────────────────────────────────────
 # Interface
 # ─────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="SuperGreffier — MSDE", page_icon="⚖️", layout="wide")
-st.title("⚖️ SuperGreffier")
-st.caption("Outil de traitement des notes d'audience — MSDE")
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # Session state
 for key, default in [
@@ -430,6 +717,16 @@ for key, default in [
     ("uploaded_filename", ""),
     ("uncertain_passages", []),
     ("uncertain_idx", 0),
+    ("step", 1),
+    ("anon_raw", ""),
+    ("corrections", {}),
+    ("flash", ""),
+    ("processing", False),
+    ("process_error", ""),
+    ("api_key_store", ""),
+    ("demo_run", False),
+    ("review_done", False),
+    ("usage_tokens", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -437,276 +734,434 @@ for key, default in [
 if st.session_state.glossaire is None:
     st.session_state.glossaire = load_glossaire()
 
-# ── Sidebar ───────────────────────────────────────────────────────
-with st.sidebar:
-    st.header("Configuration")
-    api_key = st.text_input(
-        "Clé API Anthropic",
-        type="password",
-        help="Obtenir une clé sur console.anthropic.com",
-    )
+# La clé API vit dans un état persistant (le champ de saisie est à l'étape 3)
+api_key = st.session_state.api_key_store.strip()
 
-    st.divider()
-    st.header(f"Glossaire ({len(st.session_state.glossaire)} entrées)")
+# ── En-tête + stepper ─────────────────────────────────────────────
+st.markdown(
+    '<div class="sg-kicker">MSDE · Outil de mise en forme</div>'
+    '<h1 class="sg-title">SuperGreffier</h1>'
+    '<p class="sg-sub">Des notes d\'audience brutes au récit structuré — fidèle au texte, '
+    'anonymisé avant tout envoi à l\'IA.</p>',
+    unsafe_allow_html=True,
+)
 
-    with st.expander("Consulter / modifier"):
-        raw_glossaire = "\n".join(
-            f"{k} : {v}" for k, v in sorted(st.session_state.glossaire.items())
+step = st.session_state.step
+render_stepper(step, nav_enabled=not st.session_state.processing)
+
+# Message différé (affiché après un rerun)
+if st.session_state.flash:
+    st.success(st.session_state.flash)
+    st.session_state.flash = ""
+
+# ══════════════════════════════════════════════════════════════════
+# Étape 1 — Charger
+# ══════════════════════════════════════════════════════════════════
+if step == 1:
+    with st.container(border=True):
+        st.markdown("### Vos notes d'audience")
+        st.caption("Dépose le fichier `.docx` de notes brutes — la préparation démarre automatiquement.")
+        uploaded = st.file_uploader(
+            "Fichier .docx de notes brutes", type=["docx"], label_visibility="collapsed"
         )
-        edited = st.text_area("Format : SIGLE : terme (un par ligne)", value=raw_glossaire, height=300)
-        if st.button("💾 Sauvegarder"):
-            new_g = {}
-            for line in edited.strip().split("\n"):
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    new_g[k.strip()] = v.strip()
-            st.session_state.glossaire = new_g
-            save_glossaire(new_g)
-            st.success("Glossaire sauvegardé.")
 
-    with st.expander("Ajouter une entrée"):
-        c1, c2 = st.columns(2)
-        new_k = c1.text_input("Sigle")
-        new_v = c2.text_input("Terme")
-        if st.button("Ajouter") and new_k and new_v:
-            st.session_state.glossaire[new_k.strip()] = new_v.strip()
-            save_glossaire(st.session_state.glossaire)
-            st.success(f"'{new_k}' ajouté.")
-
-# ── Onglets ───────────────────────────────────────────────────────
-tab_main, tab_help = st.tabs(["Traiter une note", "Aide"])
-
-with tab_main:
-
-    # ── 1. Upload ─────────────────────────────────────────────────
-    st.subheader("1 · Charger le fichier")
-    uploaded = st.file_uploader("Fichier .docx de notes brutes", type=["docx"])
-
-    if uploaded:
-        if uploaded.name != st.session_state.uploaded_filename:
-            # Nouveau fichier → reset complet
+        if uploaded:
             st.session_state.raw_text = extract_text(uploaded)
             st.session_state.uploaded_filename = uploaded.name
             st.session_state.result_text = ""
             st.session_state.uncertain_passages = []
             st.session_state.uncertain_idx = 0
-        elif not st.session_state.raw_text:
-            # Même fichier mais texte pas encore extrait
-            st.session_state.raw_text = extract_text(uploaded)
-        with st.expander("Aperçu des notes brutes"):
+            st.session_state.corrections = {}
+            st.session_state.review_done = False
+            goto(2)
+
+# ══════════════════════════════════════════════════════════════════
+# Étape 2 — Préparer (acronymes + anonymisation)
+# ══════════════════════════════════════════════════════════════════
+elif step == 2:
+
+    # ── Fichier chargé : rappel + actions sur une seule ligne ─────
+    n_lines = len(st.session_state.raw_text.split("\n"))
+    f_col, a_col, r_col = st.columns([3.4, 1.0, 1.6])
+    with f_col:
+        st.markdown(
+            chip(f"✓ {st.session_state.uploaded_filename} · {n_lines} lignes", "ok"),
+            unsafe_allow_html=True,
+        )
+    with a_col:
+        with st.popover("Aperçu", use_container_width=True):
             preview = st.session_state.raw_text
             st.text(preview[:3000] + ("…" if len(preview) > 3000 else ""))
+    with r_col:
+        if st.button("Remplacer le fichier", use_container_width=True):
+            st.session_state.raw_text = ""
+            st.session_state.uploaded_filename = ""
+            st.session_state.result_text = ""
+            goto(1)
 
-    st.divider()
-
-    # ── 2. Acronymes inconnus ─────────────────────────────────────
-    st.subheader("2 · Acronymes inconnus")
-
-    if st.session_state.raw_text:
+    # ── Acronymes ─────────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("### Acronymes")
         unknown = detect_unknown_acronyms(
             st.session_state.raw_text, st.session_state.glossaire
         )
         if not unknown:
-            st.success("Tous les acronymes détectés sont dans le glossaire.")
+            g_col1, g_col2 = st.columns([3.4, 2.6])
+            with g_col1:
+                st.markdown(
+                    chip("✓ Tous les acronymes détectés sont dans le glossaire", "ok"),
+                    unsafe_allow_html=True,
+                )
         else:
-            st.info(
-                f"{len(unknown)} acronyme(s) non reconnu(s). "
-                "Renseigne leur signification ou laisse vide pour ignorer."
+            st.caption(
+                f"{len(unknown)} acronyme(s) non reconnu(s) — renseigne leur signification "
+                "(ou laisse vide pour les ignorer), puis enregistre-les."
             )
-            new_entries = {}
             cols = st.columns(3)
             for i, acro in enumerate(unknown):
-                term = cols[i % 3].text_input(acro, key=f"acro_{acro}", placeholder="Signification")
-                if term.strip():
-                    new_entries[acro] = term.strip()
+                cols[i % 3].text_input(
+                    acro, key=f"acro_{acro}", placeholder="Signification"
+                )
 
-            if st.button("Valider les acronymes") and new_entries:
-                st.session_state.glossaire.update(new_entries)
-                save_glossaire(st.session_state.glossaire)
-                st.success(f"{len(new_entries)} entrée(s) ajoutée(s) au glossaire.")
-    else:
-        st.caption("Charge un fichier à l'étape 1.")
+            g_col1, g_col2 = st.columns([1.6, 4.4])
+            with g_col1:
+                if st.button("Ajouter au glossaire", use_container_width=True):
+                    clicked_entries = {}
+                    for acro in unknown:
+                        val = (st.session_state.get(f"acro_{acro}") or "").strip()
+                        if val:
+                            clicked_entries[acro] = val
+                    if clicked_entries:
+                        st.session_state.glossaire.update(clicked_entries)
+                        save_glossaire(st.session_state.glossaire)
+                        st.session_state.flash = (
+                            f"{len(clicked_entries)} entrée(s) ajoutée(s) au glossaire."
+                        )
+                        st.rerun()
+                    else:
+                        st.warning("Renseigne au moins une signification avant d'ajouter.")
 
-    st.divider()
+        with g_col2:
+            with st.popover(
+                f"Glossaire complet · {len(st.session_state.glossaire)} entrées"
+            ):
+                raw_glossaire = "\n".join(
+                    f"{k} : {v}" for k, v in sorted(st.session_state.glossaire.items())
+                )
+                edited = st.text_area(
+                    "Format : SIGLE : terme (un par ligne)", value=raw_glossaire, height=280
+                )
+                if st.button("Sauvegarder le glossaire"):
+                    new_g = {}
+                    for line in edited.strip().split("\n"):
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            new_g[k.strip()] = v.strip()
+                    st.session_state.glossaire = new_g
+                    save_glossaire(new_g)
+                    st.session_state.flash = "Glossaire sauvegardé."
+                    st.rerun()
+                st.caption("Partagé entre tous les documents, conservé d'une session à l'autre.")
 
-    # ── 3. Anonymisation ──────────────────────────────────────────
-    st.subheader("3 · Anonymisation")
-    st.caption(
-        "Liste les noms à remplacer, un par ligne. "
-        "Format : `Vrai Nom → Pseudonyme`  |  Avocats : initiales (`L.K. → A.B.`)  |  "
-        "Prévenu·es : prénom + nom fictif à consonance proche."
-    )
-    anon_input = st.text_area(
-        "Noms à anonymiser",
-        placeholder="Malo Royen → Thomas Bertrand\nJessica Remaillon → Sophie Duval\nL.K. → A.B.",
-        height=140,
-    )
-    anon_table = parse_anon_table(anon_input)
-    if anon_table:
-        st.caption(f"{len(anon_table)} remplacement(s) configuré(s).")
-
-    st.divider()
-
-    # ── 4. Lancement ──────────────────────────────────────────────
-    st.subheader("4 · Traitement")
-
-    can_run = bool(st.session_state.raw_text and api_key)
-    if not api_key:
-        st.warning("Renseigne ta clé API dans la barre latérale.")
-    if not st.session_state.raw_text:
-        st.warning("Charge un fichier à l'étape 1.")
-
-    if st.button("⚙️ Lancer le traitement", disabled=not can_run, type="primary"):
-        with st.spinner("Traitement en cours… (30 à 90 secondes)"):
-            # Reset révision passages incertains
-            st.session_state.uncertain_passages = []
-            st.session_state.uncertain_idx = 0
-            for k in list(st.session_state.keys()):
-                if k.startswith("correction_") or k.startswith("search_"):
-                    del st.session_state[k]
-
-            anonymized = apply_anonymization(st.session_state.raw_text, anon_table)
-            system_prompt = build_prompt(st.session_state.glossaire)
-            try:
-                st.session_state.result_text = call_claude(anonymized, system_prompt, api_key)
-            except anthropic.AuthenticationError:
-                st.error("Clé API invalide. Vérifie la clé dans la barre latérale.")
-            except anthropic.APIConnectionError:
-                st.error("Impossible de contacter l'API. Vérifie ta connexion internet.")
-            except Exception as e:
-                st.error(f"Erreur inattendue : {e}")
-
-    st.divider()
-
-    # ── 5. Résultat ───────────────────────────────────────────────
-    st.subheader("5 · Résultat")
-
-    if st.session_state.result_text:
-        n_uncertain = st.session_state.result_text.count("[passage incertain")
-        n_notes = st.session_state.result_text.count("[note suggérée]")
-
-        c1, c2 = st.columns(2)
-        c1.metric("Passages incertains", n_uncertain)
-        c2.metric("Notes suggérées", n_notes)
-
-        if n_uncertain:
-            st.warning(
-                f"{n_uncertain} passage(s) marqué(s) [passage incertain — à vérifier]. "
-                "Ils sont soulignés en orange dans le .docx."
-            )
-
-        st.text_area("Aperçu du récit", value=st.session_state.result_text, height=450)
-
-        docx_buf = generate_docx(st.session_state.result_text)
-        out_name = st.session_state.uploaded_filename.replace(".docx", "_récit.docx") or "récit_audience.docx"
-
-        st.download_button(
-            label="📥 Télécharger le récit (.docx)",
-            data=docx_buf,
-            file_name=out_name,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            type="primary",
+    # ── Anonymisation ─────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("### Anonymisation")
+        st.caption(
+            "Un remplacement par ligne, au format `Vrai Nom → Pseudonyme` — initiales "
+            "pour les avocat·es (`L.K. → A.B.`), prénom et nom fictifs à consonance proche "
+            "pour les prévenu·es. Les vrais noms ne quittent jamais ton poste."
         )
 
-    # ── 6. Révision passages incertains ──────────────────────────
-    n_uncertain = st.session_state.result_text.count("[passage incertain") if st.session_state.result_text else 0
-    if n_uncertain > 0:
-        st.divider()
-        st.subheader("6 · Révision des passages incertains")
+        if "anon_widget" not in st.session_state:
+            st.session_state.anon_widget = st.session_state.anon_raw
+        st.text_area(
+            "Noms à anonymiser",
+            key="anon_widget",
+            placeholder="Malo Royen → Thomas Bertrand\nJessica Remaillon → Sophie Duval\nL.K. → A.B.",
+            height=140,
+            label_visibility="collapsed",
+        )
+        st.session_state.anon_raw = st.session_state.anon_widget
 
-        # Initialiser la liste si nécessaire
-        if not st.session_state.uncertain_passages:
-            st.session_state.uncertain_passages = extract_uncertain_passages(
-                st.session_state.result_text
-            )
-            st.session_state.uncertain_idx = 0
-
-        passages = st.session_state.uncertain_passages
-        n = len(passages)
-        idx = st.session_state.uncertain_idx
-
-        # ── Navigation ────────────────────────────────────────────
-        nav_c1, nav_c2, nav_c3 = st.columns([1, 3, 1])
-        with nav_c1:
-            if st.button("← Précédent", disabled=(idx == 0), key="btn_prev"):
-                st.session_state.uncertain_idx -= 1
-                st.rerun()
-        with nav_c2:
+        anon_table = parse_anon_table(st.session_state.anon_raw)
+        if anon_table:
             st.markdown(
-                f"<div style='text-align:center;font-weight:600;padding-top:6px'>"
-                f"Passage {idx + 1} sur {n}</div>",
+                chip(f"✓ {len(anon_table)} remplacement(s) configuré(s)", "ok"),
                 unsafe_allow_html=True,
             )
-        with nav_c3:
-            if st.button("Suivant →", disabled=(idx == n - 1), key="btn_next"):
-                st.session_state.uncertain_idx += 1
-                st.rerun()
+        else:
+            st.caption("Tu peux laisser vide si les notes ne mentionnent aucun nom réel.")
 
-        passage = passages[idx]
+    _, col_next = st.columns([5, 1.4])
+    with col_next:
+        if st.button("Continuer →", type="primary", use_container_width=True):
+            goto(3)
 
-        # ── Triptych ──────────────────────────────────────────────
-        col1, col2, col3 = st.columns([2, 2, 1.5])
+# ══════════════════════════════════════════════════════════════════
+# Étape 3 — Vérifier & lancer
+# ══════════════════════════════════════════════════════════════════
+elif step == 3:
+    anon_table = parse_anon_table(st.session_state.anon_raw)
+    n_anon = len(anon_table)
+    n_gloss = len(st.session_state.glossaire)
+    n_lines = len(st.session_state.raw_text.split("\n"))
 
-        with col1:
-            st.markdown("**Contexte — texte traité**")
-            parts = []
-            if passage["context_before"]:
-                parts.append(
-                    f'<span style="color:#888;font-size:0.85em">{html_lib.escape(passage["context_before"])}</span>'
+    if st.session_state.processing:
+        # ── Écran de traitement : rien d'autre à voir ni à faire ──
+        st.markdown(
+            '<div class="sg-processing">'
+            '<div class="sg-dots"><span></span><span></span><span></span></div>'
+            '<h3>Traitement en cours…</h3>'
+            '<p>Mise en forme fidèle du récit, sans reformulation.<br>'
+            '30 à 90 secondes — ne ferme pas cet onglet.</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Appel bloquant : l'animation ci-dessus reste affichée pendant ce temps
+        st.session_state.uncertain_passages = []
+        st.session_state.uncertain_idx = 0
+        st.session_state.corrections = {}
+
+        error = None
+        if st.session_state.demo_run:
+            time.sleep(2.5)  # laisser le temps de voir l'écran de traitement
+            st.session_state.result_text = build_demo_result(st.session_state.raw_text)
+            st.session_state.usage_tokens = None
+        else:
+            anonymized = apply_anonymization(st.session_state.raw_text, anon_table)
+            residual = find_residual_names(anonymized, anon_table)
+            system_prompt = build_prompt(st.session_state.glossaire)
+            if residual:
+                error = (
+                    "Envoi bloqué : ces noms réels sont encore présents après anonymisation : "
+                    + ", ".join(residual)
+                    + ". Ajoute-les explicitement à la table d'anonymisation (étape 2)."
                 )
-            highlighted_line = html_lib.escape(passage["line"]).replace(
-                html_lib.escape("[passage incertain — à vérifier]"),
-                '<mark style="background:#FFB347;font-weight:600">[passage incertain — à vérifier]</mark>',
-            )
-            parts.append(highlighted_line)
-            if passage["context_after"]:
-                parts.append(
-                    f'<span style="color:#888;font-size:0.85em">{html_lib.escape(passage["context_after"])}</span>'
+            try:
+                if error:
+                    raise RuntimeError(error)
+                st.session_state.result_text, st.session_state.usage_tokens = call_claude(
+                    anonymized, system_prompt, api_key
                 )
-            st.markdown(
-                '<div style="font-size:0.88em;line-height:1.6;padding:10px;'
-                'background:#fafafa;border-radius:4px;border:1px solid #eee;color:#1a1a1a">'
-                + "<br><br>".join(parts) + "</div>",
-                unsafe_allow_html=True,
-            )
+            except RuntimeError:
+                pass
+            except anthropic.AuthenticationError:
+                error = "Clé API invalide. Vérifie la clé saisie ci-dessous."
+            except anthropic.APIConnectionError:
+                error = "Impossible de contacter l'API. Vérifie ta connexion internet."
+            except Exception as e:
+                error = f"Erreur inattendue : {e}"
 
-        with col2:
-            st.markdown("**Notes brutes originales**")
-            total_processed_lines = len(st.session_state.result_text.split("\n"))
-            st.components.v1.html(
-                render_raw_notes_component(
-                    st.session_state.raw_text,
-                    passage["line_idx"],
-                    total_processed_lines,
+        st.session_state.processing = False
+        if error:
+            st.session_state.process_error = error
+            st.rerun()
+        else:
+            goto(4)
+
+    else:
+        if st.session_state.process_error:
+            st.error(st.session_state.process_error)
+            st.session_state.process_error = ""
+
+        with st.container(border=True):
+            st.markdown("### Tout est prêt ?")
+            rows = [
+                ("ok", "Fichier", f"{st.session_state.uploaded_filename} · {n_lines} lignes"),
+                ("ok", "Glossaire", f"{n_gloss} acronymes seront développés"),
+                (
+                    "ok" if n_anon else "ko",
+                    "Anonymisation",
+                    f"{n_anon} remplacement(s) appliqué(s) avant l'envoi" if n_anon
+                    else "aucun remplacement configuré",
                 ),
-                height=345,
+            ]
+            html_rows = "".join(
+                f'<div class="row"><span class="ic {k}">{"✓" if k == "ok" else "!"}</span>'
+                f'<span class="lb">{label}</span><span class="dt">{detail}</span></div>'
+                for k, label, detail in rows
+            )
+            st.markdown(f'<div class="sg-recap">{html_rows}</div>', unsafe_allow_html=True)
+
+            st.write("")
+            demo = st.checkbox(
+                "Mode démo — parcourir l'outil avec un récit fictif, sans appel API",
+                key="demo_toggle",
             )
 
-        with col3:
-            st.markdown("**Correction**")
-            st.text_area(
-                "Remplacer le marqueur par :",
-                key=f"correction_{idx}",
-                height=115,
-                placeholder="Laisser vide pour conserver [passage incertain]",
-                label_visibility="collapsed",
-            )
-            if st.button("✅ Valider", key=f"btn_valider_{idx}", use_container_width=True,
-                         help="Valider et passer au suivant (Ctrl+Entrée)"):
-                if idx < n - 1:
-                    st.session_state.uncertain_idx += 1
-                    st.rerun()
-                else:
-                    corrected = apply_uncertain_corrections(
-                        st.session_state.result_text, st.session_state, n
+            if not demo:
+                st.markdown("**Clé API Anthropic**")
+                if "api_key_widget" not in st.session_state:
+                    st.session_state.api_key_widget = st.session_state.api_key_store
+                st.text_input(
+                    "Clé API Anthropic",
+                    key="api_key_widget",
+                    label_visibility="collapsed",
+                    placeholder="sk-ant-…",
+                    help="Obtenir une clé sur console.anthropic.com",
+                    autocomplete="off",
+                )
+                st.session_state.api_key_store = st.session_state.api_key_widget
+                api_key = st.session_state.api_key_store.strip()
+                if not api_key:
+                    st.markdown(
+                        chip("Clé API requise pour lancer le traitement", "warn"),
+                        unsafe_allow_html=True,
                     )
-                    st.session_state.result_text = corrected
-                    st.session_state.uncertain_passages = []
-                    st.session_state.uncertain_idx = 0
-                    st.rerun()
 
-        # Ctrl+Entrée → clic sur le bouton Valider
-        st.components.v1.html("""
+            st.write("")
+            can_run = bool(st.session_state.raw_text and (demo or api_key))
+            if st.button("Lancer le traitement", type="primary", disabled=not can_run):
+                st.session_state.demo_run = demo
+                st.session_state.review_done = False
+                st.session_state.processing = True
+                st.rerun()
+            if demo:
+                st.caption("Mode démo : récit fictif généré localement, aucun crédit consommé.")
+            else:
+                st.caption("30 à 90 secondes · ~0,05 € par document de 10 pages")
+
+# ══════════════════════════════════════════════════════════════════
+# Étape 4 — Relire & exporter
+# ══════════════════════════════════════════════════════════════════
+elif step == 4:
+    result = st.session_state.result_text
+
+    if not result:
+        st.info("Aucun récit généré pour le moment. Reviens à l'étape « Lancer » via le fil d'ariane.")
+    else:
+        n_uncertain = result.count("[passage incertain")
+        n_notes = result.count("[note suggérée]")
+
+        # ── 1. Le récit : état d'un coup d'œil ────────────────────
+        with st.container(border=True):
+            st.markdown("### Votre récit est prêt")
+
+            def stat(icon, value, label, kind):
+                return (
+                    f'<div class="sg-stat"><div class="ic {kind}">{icon}</div>'
+                    f'<div class="v">{value}</div><div class="l">{label}</div></div>'
+                )
+
+            stats = []
+            if n_uncertain:
+                stats.append(stat("!", n_uncertain, "passage(s) incertain(s) à relire ci-dessous", "warn"))
+            else:
+                stats.append(stat("✓", "0", "passage incertain — récit fidèle aux notes", "ok"))
+            if n_notes:
+                stats.append(stat("✎", n_notes, "note(s) de bas de page suggérée(s)", "info"))
+            if st.session_state.demo_run:
+                stats.append(stat("⚙", "Démo", "récit fictif de démonstration", "neutral"))
+            st.markdown(f'<div class="sg-stats">{"".join(stats)}</div>', unsafe_allow_html=True)
+
+            if n_uncertain:
+                st.caption(
+                    "Les passages non corrigés resteront soulignés en orange dans le document final."
+                )
+            with st.expander("Aperçu du récit"):
+                st.text_area(
+                    "Aperçu du récit",
+                    value=st.session_state.result_text,
+                    height=420,
+                    label_visibility="collapsed",
+                )
+
+        # ── 2. Révision des passages incertains (sens unique) ─────
+        if n_uncertain > 0 and not st.session_state.review_done:
+            with st.container(border=True):
+                title_col, count_col = st.columns([4, 1.3])
+
+                if not st.session_state.uncertain_passages:
+                    st.session_state.uncertain_passages = extract_uncertain_passages(result)
+                    st.session_state.uncertain_idx = 0
+
+                passages = st.session_state.uncertain_passages
+                n = len(passages)
+                idx = st.session_state.uncertain_idx
+
+                with title_col:
+                    st.markdown("### Relire les passages incertains")
+                with count_col:
+                    st.markdown(
+                        f"<div class='sg-passage-nav'>Passage {idx + 1} sur {n}</div>",
+                        unsafe_allow_html=True,
+                    )
+                st.caption(
+                    "Compare avec tes notes et saisis la correction, puis valide — "
+                    "laisse vide pour conserver le marqueur."
+                )
+
+                def _save_current_correction():
+                    val = st.session_state.get(f"corr_widget_{idx}", "")
+                    st.session_state.corrections[idx] = val
+
+                passage = passages[idx]
+
+                # Contexte du passage — pleine largeur, plus lisible
+                parts = []
+                if passage["context_before"]:
+                    parts.append(
+                        f'<span style="color:#8A857A;font-size:0.85em">{html_lib.escape(passage["context_before"])}</span>'
+                    )
+                highlighted_line = html_lib.escape(passage["line"]).replace(
+                    html_lib.escape("[passage incertain — à vérifier]"),
+                    '<mark style="background:#FFC933;font-weight:600">[passage incertain — à vérifier]</mark>',
+                )
+                parts.append(highlighted_line)
+                if passage["context_after"]:
+                    parts.append(
+                        f'<span style="color:#8A857A;font-size:0.85em">{html_lib.escape(passage["context_after"])}</span>'
+                    )
+                st.markdown(
+                    '<div style="font-size:0.92em;line-height:1.65;padding:14px 16px;'
+                    'background:#FDFCF7;border-radius:8px;border:1px solid #E7E2D0;color:#1B2B27">'
+                    + "<br><br>".join(parts) + "</div>",
+                    unsafe_allow_html=True,
+                )
+                st.write("")
+
+                # Correction : champ + bouton côte à côte
+                if f"corr_widget_{idx}" not in st.session_state:
+                    st.session_state[f"corr_widget_{idx}"] = (
+                        st.session_state.corrections.get(idx, "")
+                    )
+                corr_col, btn_col = st.columns([3.2, 1.2])
+                with corr_col:
+                    st.text_area(
+                        "Remplacer le marqueur par :",
+                        key=f"corr_widget_{idx}",
+                        height=90,
+                        placeholder="Saisis la correction — ou laisse vide pour conserver le marqueur",
+                        label_visibility="collapsed",
+                    )
+                with btn_col:
+                    is_last = idx == n - 1
+                    if st.button("Valider" if not is_last else "Valider et terminer",
+                                 key=f"btn_valider_{idx}", use_container_width=True,
+                                 type="primary",
+                                 help="Valider et passer au suivant (Ctrl+Entrée)"):
+                        _save_current_correction()
+                        if not is_last:
+                            st.session_state.uncertain_idx += 1
+                            st.rerun()
+                        else:
+                            mapping = {
+                                f"correction_{i}": st.session_state.corrections.get(i, "")
+                                for i in range(n)
+                            }
+                            st.session_state.result_text = apply_uncertain_corrections(
+                                result, mapping, n
+                            )
+                            st.session_state.uncertain_passages = []
+                            st.session_state.uncertain_idx = 0
+                            st.session_state.corrections = {}
+                            st.session_state.review_done = True
+                            st.session_state.flash = "Relecture terminée — corrections appliquées."
+                            st.rerun()
+
+                # Ctrl+Entrée → clic sur le bouton Valider
+                st.components.v1.html("""
 <script>
 (function() {
   function attach() {
@@ -720,7 +1175,7 @@ with tab_main:
               e.preventDefault();
               var btns = window.parent.document.querySelectorAll('button');
               for (var i = 0; i < btns.length; i++) {
-                if (btns[i].innerText.trim() === '✅ Valider') { btns[i].click(); return; }
+                if (btns[i].innerText.trim().indexOf('Valider') === 0) { btns[i].click(); return; }
               }
             }
           });
@@ -733,61 +1188,34 @@ with tab_main:
 </script>
 """, height=0)
 
-        st.divider()
-        if st.button("✅ Appliquer toutes les corrections", type="primary"):
-            corrected = apply_uncertain_corrections(
-                st.session_state.result_text, st.session_state, n
+        # ── 3. Exporter / recommencer ──────────────────────────────
+        st.write("")
+        docx_buf = generate_docx(st.session_state.result_text)
+        out_name = (
+            st.session_state.uploaded_filename.replace(".docx", "_récit.docx")
+            or "récit_audience.docx"
+        )
+        dl_col, new_col, _ = st.columns([2.2, 2.2, 2.6])
+        with dl_col:
+            st.download_button(
+                label="Télécharger le récit (.docx)",
+                data=docx_buf,
+                file_name=out_name,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                type="primary",
+                use_container_width=True,
             )
-            st.session_state.result_text = corrected
-            st.session_state.uncertain_passages = []
-            st.session_state.uncertain_idx = 0
-            st.rerun()
-
-    if st.session_state.result_text:
-        st.divider()
-        if st.button("🔄 Traiter un nouveau document"):
-            st.session_state.raw_text = ""
-            st.session_state.result_text = ""
-            st.session_state.uploaded_filename = ""
-            st.rerun()
-    else:
-        st.caption("Le récit apparaîtra ici après le traitement.")
-
-with tab_help:
-    st.markdown("""
-## Comment utiliser SuperGreffier
-
-### Prérequis
-
-Une clé API Anthropic — à obtenir sur [console.anthropic.com](https://console.anthropic.com).
-Coût estimé : **~0,05 € par document de 10 pages**.
-
-### Étapes
-
-| Étape | Action |
-|-------|--------|
-| **1** | Charge ton fichier `.docx` de notes brutes |
-| **2** | L'outil détecte les acronymes absents du glossaire. Renseigne leur signification ou laisse vide pour ignorer |
-| **3** | Liste les noms à anonymiser au format `Vrai Nom → Pseudonyme` |
-| **4** | Clique sur **Lancer le traitement** |
-| **5** | Relis l'aperçu, télécharge le `.docx` |
-
-### Marqueurs dans le document de sortie
-
-- `[passage incertain — à vérifier]` — passage trop dégradé pour être interprété avec certitude. **À corriger manuellement.** Affiché en orange souligné dans le .docx.
-- `[note suggérée]` — passage qui pourrait bénéficier d'une note de bas de page (référence juridique, personnalité, événement).
-
-### Anonymisation
-
-- **Avocats** : remplacer par les initiales (`L.K.`)
-- **Prévenu·es** : choisir un prénom et nom fictif à consonance proche du nom original
-- **Adresses** : remplacer manuellement par la région dans les notes avant d'uploader si besoin
-
-### Confidentialité
-
-Seul le texte **après anonymisation** est envoyé à Anthropic. Les vrais noms ne quittent jamais ton poste.
-
-### Glossaire
-
-Partagé entre tous les documents. Sauvegardé automatiquement à chaque ajout. Visible et modifiable dans la barre latérale.
-    """)
+        with new_col:
+            if st.button("Traiter un nouveau document", use_container_width=True):
+                st.session_state.raw_text = ""
+                st.session_state.result_text = ""
+                st.session_state.uploaded_filename = ""
+                st.session_state.uncertain_passages = []
+                st.session_state.uncertain_idx = 0
+                st.session_state.corrections = {}
+                st.session_state.anon_raw = ""
+                st.session_state.demo_run = False
+                st.session_state.review_done = False
+                if "anon_widget" in st.session_state:
+                    del st.session_state["anon_widget"]
+                goto(1)
