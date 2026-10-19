@@ -22,7 +22,7 @@ Outil (app Streamlit + API Claude) qui transforme les **notes d'audience brutes*
 | `Charte rédaction harmonisée - Traitement récits.md` | Règles d'écriture MSDE (typo, majuscules, écriture inclusive) — source de vérité rédactionnelle |
 | `Politique_RGPD_Outil_IA_MSDE.md` | Politique de protection des données (v0.1, à valider par la direction) |
 | `Mise en page Texte - Boîte à Outils.md` | Guide manuel de mise en page Word (livret A4, calques) — **hors périmètre v1** de l'outil |
-| `app/app.py` | Code de l'application Streamlit (parcours guidé en 4 étapes) |
+| `app/app.py` | Code de l'application Streamlit (parcours en 5 feuilles : accueil, acronymes, anonymisation, « Tout est prêt ? », résultat) |
 | `app/anonymisation.py` | Anonymisation locale (prénoms/noms seuls, casse, mots entiers, une passe) + contrôle des noms résiduels |
 | `app/energie.py` | Estimation CO₂e d'un traitement (fourchette), équivalence en temps d'ordinateur allumé |
 | `app/tests/` | Tests unitaires (`python3 -m unittest discover -s tests`, depuis `app/`) |
@@ -39,12 +39,12 @@ Pipeline principal, dans l'ordre :
 2. **Anonymisation** locale via table de correspondance → `apply_anonymization()` dans `anonymisation.py` (les vrais noms ne quittent jamais le poste ; l'envoi est bloqué si un nom réel subsiste : `find_residual_names()`)
 3. **Détection des acronymes inconnus** → `detect_unknown_acronyms()` (résolution interactive par l'utilisateur)
 4. **Appel API Claude** avec le prompt système + glossaire → `build_prompt()` / `call_claude()`
-5. **Résolution des passages incertains** → `extract_uncertain_passages()` / `render_raw_notes_component()`
+5. **Passages incertains** : pas de relecture dans l'app. Le marqueur `[passage incertain — à vérifier]` reste dans le document, **surligné en jaune**, pour relecture dans Word (`MARKER_RE`, `add_text_runs()`)
 6. **Export `.docx` structuré** → `generate_docx()`
 
-Le bouton **⚡ Énergie** (en haut à droite) affiche l'estimation CO₂e du traitement et la compare au temps d'ordinateur allumé évité. Ordre de grandeur, pas une mesure : Anthropic ne publie pas de donnée par requête (méthode et sources dans `energie.py` et dans le panneau).
+La barre **Énergie consommée** (fixée en bas de l'écran résultat) affiche l'estimation CO₂e du traitement et la compare au temps d'ordinateur allumé évité. Ordre de grandeur, pas une mesure : Anthropic ne publie pas de donnée par requête (méthode et sources dans `energie.py` et dans le panneau).
 
-Le **prompt système** (`PROMPT_SYSTEME`, en haut du fichier) encode la règle de fidélité et les règles typographiques MSDE. Le glossaire de base est dans `GLOSSAIRE_BASE`, fusionné avec `glossaire.json` (modifiable via l'UI, sidebar).
+Le **prompt système** (`PROMPT_SYSTEME`, en haut du fichier) encode la règle de fidélité et les règles typographiques MSDE. Le glossaire de base est dans `GLOSSAIRE_BASE`, fusionné avec `glossaire.json` (modifiable via le bouton « Voir » de l'écran Acronymes).
 
 ## Lancer l'outil
 
@@ -54,7 +54,7 @@ pip3 install -r requirements.txt   # une seule fois
 python3 -m streamlit run app.py
 ```
 
-Ouvre `http://localhost:8501`. Nécessite une **clé API Anthropic** (console.anthropic.com), à coller dans la sidebar. Coût ~0,05 € / document de 10 pages. Détails et dépannage : `app/LANCER.md`.
+Ouvre `http://localhost:8501`. Nécessite une **clé API Anthropic** (console.anthropic.com), à coller sur l'écran « Tout est prêt ? ». Coût ~0,05 € / document de 10 pages. Détails et dépannage : `app/LANCER.md`.
 
 ## RGPD — l'essentiel
 

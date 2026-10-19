@@ -47,7 +47,7 @@ Pour l'arrêter : reviens au Terminal et fais `Ctrl + C`.
 
 L'outil a besoin d'une clé pour parler à l'IA. **Fabien te la fournit en privé** (par message direct) pour la phase de test.
 
-- Colle-la dans le champ **« Clé API »** en haut à gauche de l'outil.
+- Colle-la dans le champ **« Clé API Anthropic »** de l'écran **« Tout est prêt ? »**, juste avant de lancer le traitement.
 - **Ne la partage pas, ne la mets nulle part par écrit en public.** Elle est liée au compte du MSDE.
 
 ---
@@ -57,7 +57,7 @@ L'outil a besoin d'une clé pour parler à l'IA. **Fabien te la fournit en priv�
 1. Prépare tes notes dans un fichier Word (`.docx`).
 2. **Anonymise avant tout** : remplace les vrais noms par des pseudonymes. Les vrais noms ne doivent jamais être envoyés à l'IA (voir la politique RGPD du MSDE).
 3. Charge le fichier dans l'outil, laisse-le proposer les développements d'acronymes inconnus, puis récupère le `.docx` structuré en sortie.
-4. Relis : l'outil marque `[passage incertain — à vérifier]` là où il n'est pas sûr. Ces passages demandent ton œil.
+4. Relis dans Word : l'outil marque `[passage incertain — à vérifier]` là où il n'est pas sûr, **surligné en jaune**. Ces passages demandent ton œil.
 
 ---
 
