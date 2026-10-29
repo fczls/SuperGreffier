@@ -2,8 +2,6 @@
 
 Merci de tester l'outil 🙏 Ce guide te fait passer de zéro à un premier récit d'audience. Compte **15 minutes** la première fois. Aucune compétence technique requise, juste suivre les étapes dans l'ordre.
 
-L'outil transforme des **notes d'audience brutes** (fichier Word) en un **récit structuré**, conforme à la charte du MSDE. Il ne réécrit pas : il met en forme, corrige la typo, développe les acronymes et signale les passages douteux.
-
 ---
 
 ## Étape 1 — Récupérer l'outil
