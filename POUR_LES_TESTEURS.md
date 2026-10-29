@@ -1,6 +1,6 @@
 # SuperGreffier — Guide pour les testeur·euses
 
-Merci de tester l'outil 🙏 Ce guide te fait passer de zéro à un premier récit d'audience. Compte **15 minutes** la première fois. Aucune compétence technique requise, juste suivre les étapes dans l'ordre.
+Ce guide te fait passer de zéro à un premier récit d'audience. Compte **15 minutes** la première fois. Aucune compétence technique requise, juste suivre les étapes dans l'ordre.
 
 ---
 
