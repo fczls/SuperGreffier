@@ -12,9 +12,10 @@ Si la commande ne marche pas → télécharge Python sur [python.org](https://ww
 - Mac : `Cmd + Espace` → tape `Terminal` → Entrée
 
 **3. Va dans le dossier de l'outil**
-```bash
-cd ~/Documents/Obsidian/msde/SuperGreffier/app
-```
+
+Tape `cd ` (avec un espace), puis glisse-dépose le dossier `app` (celui du dossier `SuperGreffier` décompressé) depuis le Finder dans le Terminal, et appuie sur Entrée.
+
+> **Version Obsidian (Fabien) :** le dossier est dans le coffre, donc `cd ~/Documents/Obsidian/msde/SuperGreffier/app`.
 
 **4. Installe les dépendances** (une seule fois)
 ```bash
@@ -29,8 +30,8 @@ python3 -m pip install -r requirements.txt
 
 ## Lancer l'outil
 
+Depuis le dossier `app` :
 ```bash
-cd ~/Documents/Obsidian/msde/SuperGreffier/app
 python3 -m streamlit run app.py
 ```
 
@@ -42,10 +43,11 @@ Pour l'arrêter : retourner dans le Terminal et appuyer sur `Ctrl + C`.
 
 ## Clé API
 
-L'outil a besoin d'une clé API Anthropic :
-1. Va sur [console.anthropic.com](https://console.anthropic.com)
-2. Crée un compte et génère une clé API
-3. Colle-la dans le champ « Clé API Anthropic » en haut à gauche dans l'outil
+L'outil a besoin d'une clé API Anthropic.
+- **Testeur·euses :** Fabien vous la transmet en privé. Ne la partagez pas.
+- **Sinon :** crée un compte sur [console.anthropic.com](https://console.anthropic.com) et génère une clé API.
+
+Colle-la dans le champ « Clé API Anthropic » de l'écran « Tout est prêt ? », juste avant de lancer le traitement.
 
 **Coût estimé : ~0,05 € par document de 10 pages.**
 

@@ -25,6 +25,10 @@ Ce guide te fait passer de zéro à un premier récit d'audience. Compte **15 mi
    ```
    pip3 install -r requirements.txt
    ```
+   Si `pip3` n'est pas reconnu ou affiche une erreur, essaie :
+   ```
+   python3 -m pip install -r requirements.txt
+   ```
 
 ---
 
@@ -53,8 +57,8 @@ L'outil a besoin d'une clé pour parler à l'IA. **Fabien te la fournit en priv�
 ## Étape 5 — Traiter un premier document
 
 1. Prépare tes notes dans un fichier Word (`.docx`).
-2. **Anonymise avant tout** : remplace les vrais noms par des pseudonymes. Les vrais noms ne doivent jamais être envoyés à l'IA (voir la politique RGPD du MSDE).
-3. Charge le fichier dans l'outil, laisse-le proposer les développements d'acronymes inconnus, puis récupère le `.docx` structuré en sortie.
+2. Charge le fichier dans l'outil. Inutile d'anonymiser à la main : l'étape **« Anonymisation »** s'en charge sur ton ordinateur, avant tout envoi à l'IA. Tu indiques les noms à remplacer par des pseudonymes, et l'outil **bloque l'envoi** s'il reste un vrai nom dans le texte (voir la politique RGPD du MSDE).
+3. Laisse l'outil proposer les développements d'acronymes inconnus, puis récupère le `.docx` structuré en sortie.
 4. Relis dans Word : l'outil marque `[passage incertain — à vérifier]` là où il n'est pas sûr, **surligné en jaune**. Ces passages demandent ton œil.
 
 ---
