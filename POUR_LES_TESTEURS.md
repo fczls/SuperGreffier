@@ -29,6 +29,20 @@ Ce guide te fait passer de zéro à un premier récit d'audience. Compte **15 mi
    ```
    python3 -m pip install -r requirements.txt
    ```
+   **Sous Linux (Ubuntu, Debian…)**, si tu vois `externally-managed-environment`, installe dans un environnement isolé, toujours dans le dossier `app` :
+   ```
+   sudo apt install python3-venv
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+   (La première ligne n'est utile que si la deuxième se plaint d'un paquet manquant.)
+
+   Pour lancer l'outil sous Linux (étape 3), utilise cette commande, **en une seule ligne** et avec `(.venv)` affiché au début de ton Terminal :
+   ```
+   python -m streamlit run app.py
+   ```
+   À chaque nouvelle ouverture du Terminal, refais d'abord `source .venv/bin/activate` dans le dossier `app`.
 
 ---
 
@@ -60,6 +74,30 @@ L'outil a besoin d'une clé pour parler à l'IA. **Fabien te la fournit en priv�
 2. Charge le fichier dans l'outil. Inutile d'anonymiser à la main : l'étape **« Anonymisation »** s'en charge sur ton ordinateur, avant tout envoi à l'IA. Tu indiques les noms à remplacer par des pseudonymes, et l'outil **bloque l'envoi** s'il reste un vrai nom dans le texte (voir la politique RGPD du MSDE).
 3. Laisse l'outil proposer les développements d'acronymes inconnus, puis récupère le `.docx` structuré en sortie.
 4. Relis dans Word : l'outil marque `[passage incertain — à vérifier]` là où il n'est pas sûr, **surligné en jaune**. Ces passages demandent ton œil.
+
+---
+
+## Relancer l'application (usage courant)
+
+Une fois l'installation faite, **tu n'as plus à la refaire** : il suffit de relancer l'outil.
+
+1. Ouvre le **Terminal**.
+2. Place-toi dans le dossier `app` : tape `cd ` (avec un espace), glisse-dépose le dossier `app` depuis le Finder (ou le gestionnaire de fichiers) dans le Terminal, puis Entrée.
+3. **Sous Linux uniquement** : active l'environnement isolé. Le Terminal doit alors afficher `(.venv)` au début de la ligne.
+   ```
+   source .venv/bin/activate
+   ```
+4. Lance l'outil, **en une seule ligne** :
+   - Mac :
+     ```
+     python3 -m streamlit run app.py
+     ```
+   - Linux (avec `(.venv)` affiché) :
+     ```
+     python -m streamlit run app.py
+     ```
+5. L'outil s'ouvre dans ton navigateur (sinon, ouvre `http://localhost:8501`). Recolle ta clé API sur l'écran « Tout est prêt ? » : elle n'est pas mémorisée entre deux lancements.
+6. Pour arrêter : retourne dans le Terminal et fais `Ctrl + C`.
 
 ---
 
